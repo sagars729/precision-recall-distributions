@@ -12,7 +12,7 @@ import hashlib
 import numpy as np
 import inception
 import prd_score as prd
-
+import random
 
 parser = argparse.ArgumentParser(
     description='Assessing Generative Models via Precision and Recall',
@@ -42,7 +42,8 @@ parser.add_argument('--inception_path', type=str,
                     help='path to pre-trained Inception.pb file')
 parser.add_argument('--silent', dest='verbose', action='store_false',
                     help='disable logging output')
-
+parser.add_argument("--balance", type=int, default=-1)
+parser.add_argument("--no_cache", action="store_true", default=False)
 args = parser.parse_args()
 
 
@@ -53,10 +54,11 @@ def generate_inception_embedding(imgs, inception_path, layer_name='pool_3:0'):
 def load_or_generate_inception_embedding(directory, cache_dir, inception_path):
     hash = hashlib.md5(directory.encode('utf-8')).hexdigest()
     path = os.path.join(cache_dir, hash + '.npy')
-    if os.path.exists(path):
+    if os.path.exists(path) and not args.no_cache:
         embeddings = np.load(path)
         return embeddings
     imgs = load_images_from_dir(directory)
+    print(len(imgs))
     embeddings = generate_inception_embedding(imgs, inception_path)
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
@@ -68,6 +70,12 @@ def load_or_generate_inception_embedding(directory, cache_dir, inception_path):
 def load_images_from_dir(directory, types=('png', 'jpg', 'bmp', 'gif')):
     paths = [os.path.join(directory, fn) for fn in os.listdir(directory)
              if os.path.splitext(fn)[-1][1:] in types]
+    if args.balance != -1:
+      if len(paths) > args.balance:
+        paths = random.sample(paths, args.balance)
+      elif len(paths) < args.balance:
+        paths = paths*(args.balance//len(paths)) + random.sample(paths, args.balance%len(paths))
+    print(len(paths))
     # images are in [0, 255]
     imgs = [cv2.cvtColor(cv2.imread(path, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
             for path in paths]
@@ -78,7 +86,6 @@ if __name__ == '__main__':
     if len(args.eval_dirs) != len(args.eval_labels):
         raise ValueError(
             'Number of --eval_dirs must be equal to number of --eval_labels.')
-
     reference_dir = os.path.abspath(args.reference_dir)
     eval_dirs = [os.path.abspath(directory) for directory in args.eval_dirs]
 
